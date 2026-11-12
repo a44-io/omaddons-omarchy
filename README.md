@@ -2,7 +2,18 @@
 
 The Omarchy bar widget for [omaddons](https://github.com/a44-io/omaddons), a World of Warcraft addon manager for Linux. It finds every WoW client on the machine and shows pending addon updates, Lua errors and WTF backups. Every change it makes can be undone.
 
-![The omaddons panel on the Omarchy bar](preview.png)
+<table>
+<tr>
+<td valign="top" width="50%">
+<img src="docs/updates.png" alt="The omaddons bar widget's panel on its Updates view: DBM and DBM-Party-Forever updates waiting on WoW: Forever, with an Update WoW: Forever button">
+<img src="docs/settings.png" alt="The widget's Settings sheet: panel width, refresh, update and notification options, omaddons' channel and automatic backups, the clients, and GitHub access">
+</td>
+<td valign="top" width="50%">
+<img src="docs/search.png" alt="The Search view for WoW: Forever: the built-in catalog of well-known addons, each saying it works on WoW: Forever and where it comes from, with Install on the hovered row">
+<img src="docs/backups.png" alt="The Backups view for WoW: Forever: automatic backups on, 14 WTF backups made after play sessions or by hand, each with its file count and size">
+</td>
+</tr>
+</table>
 
 This repository holds the setup button, not the widget itself. The omaddons program renders the widget for your machine: the widget records where omaddons lives and stays at the same version, so it can't be a plain git checkout. The button installs omaddons if you don't have it, then installs the widget, which takes the button's place on the bar.
 
