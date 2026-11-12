@@ -12,7 +12,7 @@ This repository holds the setup button, not the widget itself. The omaddons prog
 omarchy plugin add https://github.com/a44-io/omaddons-omarchy.git --enable
 ```
 
-Click the gamepad on the bar, then **Set up**. The button:
+Click the gamepad on the bar. Its panel says what it found and offers one button (**Install the widget**, or **Install omaddons and the widget** when you don't have omaddons yet). That button:
 
 1. Looks for omaddons in `~/.local/bin`, then on your `PATH`, and checks that it can install this widget.
 2. If omaddons is missing or too old, installs it with Omarchy's mise installer, the way Omarchy installs other CLI tools:

@@ -206,9 +206,9 @@ Panel {
     var v = root.version !== "" ? " " + root.version : ""
     switch (root.phase) {
     case "checking": return "Looking for omaddons…"
-    case "missing": return "omaddons isn't installed. Set up installs it with Omarchy's mise installer, from its GitHub releases, then puts the omaddons widget in this button's place."
-    case "outdated": return "The omaddons" + v + " at " + root.binary + " is too old to install this widget. Set up installs the newest release with mise, then puts the widget in this button's place."
-    case "ready": return "omaddons" + v + " is installed. Set up puts the omaddons widget in this button's place on the bar."
+    case "missing": return "omaddons isn't installed yet. The button below installs it with Omarchy's mise installer, from its GitHub releases, then puts the omaddons widget in this button's place."
+    case "outdated": return "The omaddons" + v + " at " + root.binary + " is too old to install this widget. The button below installs the newest release with mise, then puts the widget in this button's place."
+    case "ready": return "omaddons" + v + " is installed. Install the widget to put it in this button's place on the bar."
     case "installing-cli": return "Installing omaddons with mise…"
     case "downloading": return "Downloading omaddons…"
     case "installing": return "Installing the omaddons widget…"
@@ -465,7 +465,7 @@ Panel {
         Text {
           Layout.fillWidth: true
           text: "Runs " + (root.binary !== "" && root.phase === "ready" ? "" : "omarchy-mise-install, then ")
-            + "omaddons omarchy install, which records the change in omaddons' history. Enter sets up, Esc closes."
+            + "omaddons omarchy install, which records the change in omaddons' history. Enter presses the first button, Esc closes."
           color: root.muted
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
