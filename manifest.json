@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "a44.omaddons",
+  "name": "omaddons",
+  "version": "0.1.0",
+  "author": "A44 Labs",
+  "license": "MIT",
+  "description": "World of Warcraft addons on every client: updates, Lua errors and WTF backups. One click installs omaddons and its bar widget.",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "omaddons",
+    "description": "Sets up the omaddons bar widget: installs the omaddons CLI if needed, then puts the full widget in this button's place.",
+    "category": "Games",
+    "aliases": ["omaddons", "wow", "warcraft", "addons"],
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
