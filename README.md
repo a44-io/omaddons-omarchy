@@ -79,7 +79,14 @@ omarchy plugin remove a44.omaddons --yes
 
 This removes the button, or the widget once it is installed. `omaddons omarchy remove` also removes the widget, and records the removal in omaddons' history.
 
-Neither command uninstalls omaddons itself. If this button installed it, remove it with `mise unuse -g github:a44-io/omaddons`. If the button installed it beside another omaddons, use `mise uninstall github:a44-io/omaddons@0.2.1`.
+Neither command uninstalls omaddons itself. If this button installed it, remove it with:
+
+```bash
+mise unuse -g github:a44-io/omaddons            # out of mise's global configuration
+mise uninstall --all github:a44-io/omaddons     # and off the disk
+```
+
+If the button installed it beside another omaddons, the second command alone is enough.
 
 ## What it runs
 
