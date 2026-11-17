@@ -12,49 +12,55 @@ import qs.Ui
 // plugin site carries this button instead. It holds the widget's plugin id,
 // a44.omaddons, until `omaddons omarchy install` replaces this folder with the real
 // widget and rescans Omarchy's plugins: the widget then takes this button's place on the
-// bar. One click does the whole setup:
+// bar.
 //
-//   1. Find omaddons (~/.local/bin, then PATH) and ask it where it installs the widget
-//      (`omaddons omarchy status --json`). A build that names plugins/a44.omaddons
-//      replaces this folder; an older one would install beside it.
-//   2. When omaddons is missing or older, install it the Omarchy way, as the HEY plugin
-//      installs its CLI: `omarchy-mise-install github:a44-io/omaddons omaddons`, then run
-//      it once so mise downloads the release.
-//   3. Run `omaddons omarchy install` in a session of its own (`setsid -w`): the install
-//      outlives this button when the rescan unloads it, and a failure still comes back
-//      here with its message.
+// It runs exactly one omaddons: the release pinned below, and only after the installed
+// binary's SHA-256 matches the one pinned with it. A later or replaced upstream release
+// is never run by this button. One click does the whole setup:
 //
-// Every command is an argument list. The one shell script, the probe, is a constant that
-// takes no input.
+//   1. Ask mise where the pinned release is installed (`mise where`, local and offline)
+//      and hash its binary. A match is ready; a mismatch is refused, and nothing runs.
+//   2. When it is not installed, install exactly that release with mise:
+//      `mise use -g github:a44-io/omaddons@<version>`, or `mise install …` when another
+//      omaddons is already on PATH, so the user's own mise configuration is left as it is.
+//      Then check the downloaded binary as in step 1.
+//   3. Run the verified binary's `omarchy install` in a session of its own (`setsid -w`):
+//      the install outlives this button when the rescan unloads it, and a failure still
+//      comes back here with its message.
+//
+// Every command is an argument list. The one shell script, the probe, is a constant; the
+// pinned tool is passed to it as an argument, never written into it.
 Panel {
   id: root
   moduleName: "a44.omaddons"
   ipcTarget: "a44.omaddons"
 
-  // checking, missing, outdated, ready, installing-cli, downloading, installing, done,
-  // failed
+  // The one omaddons this button installs and runs: its release, and the SHA-256 of the
+  // `omaddons` binary in that release's tarball. A new omaddons release changes both
+  // here, in a commit the plugin marketplace reviews before it is published.
+  readonly property string pinnedVersion: "0.2.1"
+  readonly property string pinnedSha256: "0b0353001971176dc2ef6e545193962c11bed65c9ecd4e30ddcc38ce5c18091b"
+  readonly property string toolSpec: "github:a44-io/omaddons@" + pinnedVersion
+
+  // checking, verifying, missing, ready, installing-cli, installing, done, failed
   property string phase: "checking"
-  // The omaddons the probe found (absolute) and its version.
+  // The verified binary of the pinned release (absolute), once the probe has hashed it.
   property string binary: ""
-  property string version: ""
-  // ~/.local/bin/omaddons exists now, and existed before this attempt's mise install.
-  property bool wrapperExists: false
-  property bool wrapperBefore: false
+  // An omaddons the probe found on PATH: never run, only named in the panel.
+  property string other: ""
   // What went wrong, for `failed`: one sentence, and the tool's own last words.
   property string failure: ""
   property string failureOutput: ""
-  // A click asked for the whole setup: go on to the widget once omaddons is usable.
+  // A click asked for the whole setup: go on to the widget once omaddons is verified.
   property bool continueToWidget: false
-  // This attempt already installed omaddons through mise: never loop on it.
+  // This attempt already installed the pinned release with mise: never loop on it.
   property bool cliTried: false
   // `done` for a while and still here: the shell did not take the widget in.
   property bool doneStale: false
   property real spinAngle: 0
 
   readonly property string readmeUrl: "https://github.com/a44-io/omaddons-omarchy#readme"
-  readonly property string wrapper: Quickshell.env("HOME") + "/.local/bin/omaddons"
-  readonly property var miseArgv: ["omarchy-mise-install", "github:a44-io/omaddons", "omaddons"]
-  readonly property bool busy: ["checking", "installing-cli", "downloading", "installing"].indexOf(phase) !== -1
+  readonly property bool busy: ["checking", "verifying", "installing-cli", "installing"].indexOf(phase) !== -1
   // U+F0297 nf-md-gamepad_variant (the widget's own glyph) and U+F04E6 nf-md-sync.
   readonly property string glyph: String.fromCodePoint(0xF0297)
   readonly property string syncGlyph: String.fromCodePoint(0xF04E6)
@@ -62,58 +68,49 @@ Panel {
   readonly property color muted: Commons.Color.muted
   readonly property string fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
 
-  // Line 1: `wrapper` when ~/.local/bin/omaddons exists, else `nowrapper`. Line 2:
-  // `binary<TAB><path>` for the first candidate (~/.local/bin, then PATH) whose
-  // `omarchy status --json` works, followed by that JSON; `broken<TAB><path>` and the
-  // last failing answer when every candidate failed (their stderr goes to stderr); or
-  // `missing`. A wrapper that cannot download never hides a working omaddons on PATH.
+  // `$1` is the pinned tool. Prints `nomise` without mise; else `pinned<TAB><binary>`
+  // and that binary's `sha256sum` line when mise has the pinned release; else `missing`,
+  // then `other<TAB><path>` when some other omaddons is on PATH. It runs no omaddons.
   readonly property string probeScript:
-      'w="$HOME/.local/bin/omaddons"; '
-    + 'if [ -e "$w" ]; then echo wrapper; else echo nowrapper; fi; '
-    + 'found=""; prev=""; last=""; '
-    + 'for p in "$w" "$(command -v omaddons 2>/dev/null)"; do '
-    + '[ -n "$p" ] && [ -x "$p" ] && [ "$p" != "$prev" ] || continue; '
-    + 'prev=$p; found=${found:-$p}; '
-    + 'if out=$("$p" omarchy status --json); then printf "binary\\t%s\\n%s\\n" "$p" "$out"; exit 0; fi; '
-    + 'last=$out; '
-    + 'done; '
-    + 'if [ -n "$found" ]; then printf "broken\\t%s\\n%s\\n" "$found" "$last"; else echo missing; fi'
+      'command -v mise >/dev/null 2>&1 || { echo nomise; exit 0; }; '
+    + 'if dir=$(mise where "$1" 2>/dev/null) && [ -f "$dir/omaddons" ]; then '
+    + 'printf "pinned\\t%s\\n" "$dir/omaddons"; sha256sum -- "$dir/omaddons"; exit 0; fi; '
+    + 'echo missing; '
+    + 'if other=$(command -v omaddons 2>/dev/null); then printf "other\\t%s\\n" "$other"; fi'
 
   // ------------------------------------------------------------------ the steps
 
   function probe() {
-    root.phase = root.cliTried ? "downloading" : "checking"
+    root.phase = root.cliTried ? "verifying" : "checking"
     root.failure = ""
     root.failureOutput = ""
-    // Through the mise wrapper, the first run downloads the release, and offline mise
-    // can wait on its version check for over a minute.
-    probeStep.begin(["sh", "-c", root.probeScript], 300)
+    probeStep.begin(["sh", "-c", root.probeScript, "sh", root.toolSpec], 60)
   }
 
   function probed(code, out, err) {
     var lines = String(out || "").split("\n")
-    root.wrapperExists = lines[0].trim() === "wrapper"
-    var head = (lines[1] || "").trim()
-    var json = lines.slice(2).join("\n").trim()
-    var env = null
-    try { env = json !== "" ? JSON.parse(json) : null } catch (e) { env = null }
+    var head = lines[0].trim()
+    root.binary = ""
+    root.other = ""
+    if (code !== 0) return fail("omaddons could not be checked.", err || out)
+    if (head === "nomise")
+      return fail("mise is not on PATH. Omarchy ships it, and this button installs omaddons with it.", "")
     if (head === "missing") {
-      root.binary = ""
-      root.version = ""
+      var found = /^other\t(.+)$/.exec((lines[1] || "").trim())
+      root.other = found ? found[1] : ""
       root.phase = "missing"
-    } else {
-      var found = /^(binary|broken)\t(.+)$/.exec(head)
-      if (!found) return fail("omaddons could not be checked.", err || out)
-      root.binary = found[2]
-      root.version = env && env.tool_version ? String(env.tool_version) : ""
-      if (found[1] === "broken") {
-        var message = env && env.error && env.error.message ? String(env.error.message) : ""
-        if (root.cliTried) return failAfterCli("mise could not download omaddons.", err || message)
-        return fail("The omaddons at " + root.binary + " did not work.", message || err)
-      }
-      var path = env && env.data && env.data.plugin ? String(env.data.plugin.path || "") : ""
-      root.phase = /\/plugins\/a44\.omaddons$/.test(path) ? "ready" : "outdated"
+      if (root.continueToWidget) next(err)
+      return
     }
+    var pinned = /^pinned\t(.+)$/.exec(head)
+    if (!pinned) return fail("omaddons could not be checked.", err || out)
+    var digest = String(lines[1] || "").trim().split(/\s+/)[0]
+    if (digest !== root.pinnedSha256)
+      return fail("The omaddons " + root.pinnedVersion + " that mise installed is not the release this plugin pins, so it was not run. "
+        + "Remove it with `mise uninstall " + root.toolSpec + "`, then try again.",
+        "binary: " + pinned[1] + "\nSHA-256: " + (digest || "none") + "\npinned:  " + root.pinnedSha256)
+    root.binary = pinned[1]
+    root.phase = "ready"
     if (root.continueToWidget) next(err)
   }
 
@@ -124,41 +121,31 @@ Panel {
     root.cliTried = false
     root.doneStale = false
     if (root.phase === "failed" || root.phase === "done") probe()
-    else next()
+    else next("")
   }
 
-  // `err`: the probe's stderr, where a failing mise wrapper says why.
   function next(err) {
     if (root.phase === "ready") return installWidget()
-    if (root.phase !== "missing" && root.phase !== "outdated") return
+    if (root.phase !== "missing") return
     if (!root.cliTried) return installCli()
-    // After the mise install: the wrapper answered but is still too old, or it did not
-    // work and the probe fell back to an older omaddons on PATH, or found nothing.
-    if (root.binary === root.wrapper)
-      return failAfterCli("The newest omaddons release still installs the widget elsewhere, so it cannot replace this button yet.", "")
-    return failAfterCli("mise could not download omaddons.", err)
+    return fail("mise reported omaddons " + root.pinnedVersion + " installed, but it is not where mise keeps it.", err)
+  }
+
+  // The pinned release only. With another omaddons on PATH, `mise install` leaves the
+  // user's mise configuration as it is; otherwise `mise use -g` also puts omaddons on
+  // PATH, through the mise activation Omarchy sets up.
+  function installArgv() {
+    return root.other !== "" ? ["mise", "install", root.toolSpec] : ["mise", "use", "-g", root.toolSpec]
   }
 
   function installCli() {
     root.cliTried = true
-    root.wrapperBefore = root.wrapperExists
     root.phase = "installing-cli"
-    cliStep.begin(root.miseArgv, 60)
-  }
-
-  // A failure after this attempt's mise install. A wrapper the install just created
-  // that does not work would shadow a working omaddons in the terminal: it goes.
-  function failAfterCli(sentence, output) {
-    if (!root.wrapperBefore && root.wrapperExists) {
-      Quickshell.execDetached(["rm", "-f", "--", root.wrapper])
-      root.wrapperExists = false
-      sentence += " The ~/.local/bin/omaddons wrapper it had just created was removed."
-    }
-    return fail(sentence, output)
+    cliStep.begin(root.installArgv(), 300)
   }
 
   function cliDone(code, out, err) {
-    if (code !== 0) return fail("Omarchy's mise installer could not install omaddons.", err || out)
+    if (code !== 0) return fail("mise could not install omaddons " + root.pinnedVersion + ".", err || out)
     probe()
   }
 
@@ -187,9 +174,7 @@ Panel {
 
   // The commands that do this by hand, for Copy.
   function manualCommand() {
-    var install = (root.binary !== "" ? root.binary : "omaddons") + " omarchy install"
-    return root.binary !== "" && root.phase !== "outdated" ? install
-      : root.miseArgv.join(" ") + " && ~/.local/bin/omaddons omarchy install"
+    return root.installArgv().join(" ") + " && \"$(mise where " + root.toolSpec + ")/omaddons\" omarchy install"
   }
 
   function copyCommand() {
@@ -203,14 +188,14 @@ Panel {
   // ------------------------------------------------------------------ the words
 
   function statusText() {
-    var v = root.version !== "" ? " " + root.version : ""
+    var v = root.pinnedVersion
     switch (root.phase) {
-    case "checking": return "Looking for omaddons…"
-    case "missing": return "omaddons isn't installed yet. The button below installs it with Omarchy's mise installer, from its GitHub releases, then puts the omaddons widget in this button's place."
-    case "outdated": return "The omaddons" + v + " at " + root.binary + " is too old to install this widget. The button below installs the newest release with mise, then puts the widget in this button's place."
-    case "ready": return "omaddons" + v + " is installed. Install the widget to put it in this button's place on the bar."
-    case "installing-cli": return "Installing omaddons with mise…"
-    case "downloading": return "Downloading omaddons…"
+    case "checking": return "Looking for omaddons " + v + "…"
+    case "verifying": return "Checking the downloaded omaddons " + v + " against its pinned SHA-256…"
+    case "missing": return "omaddons " + v + " isn't installed yet. The button below installs exactly that release with mise, checks its SHA-256 against the one this plugin pins, then puts the omaddons widget in this button's place."
+      + (root.other !== "" ? " The omaddons at " + root.other + " is left alone and never run; to use it instead, run `omaddons omarchy install`." : "")
+    case "ready": return "omaddons " + v + " is installed and matches its pinned SHA-256. Install the widget to put it in this button's place on the bar."
+    case "installing-cli": return "Installing omaddons " + v + " with mise…"
     case "installing": return "Installing the omaddons widget…"
     case "done": return root.doneStale
       ? "The widget is installed, but Omarchy's shell has not picked it up yet. Reload the plugins to finish."
@@ -222,8 +207,7 @@ Panel {
 
   function primaryText() {
     switch (root.phase) {
-    case "missing": return "Install omaddons and the widget"
-    case "outdated": return "Update omaddons and install the widget"
+    case "missing": return "Install omaddons " + root.pinnedVersion + " and the widget"
     case "ready": return "Install the widget"
     case "failed": return "Try again"
     case "done": return root.doneStale ? "Reload plugins" : "Installing…"
@@ -327,8 +311,9 @@ Panel {
     target: "a44.omaddons.setup"
 
     function state(): string {
-      return JSON.stringify({ "phase": root.phase, "binary": root.binary, "version": root.version,
-        "failure": root.failure, "output": root.failureOutput, "stale": root.doneStale })
+      return JSON.stringify({ "phase": root.phase, "pinned": root.toolSpec, "sha256": root.pinnedSha256,
+        "binary": root.binary, "other": root.other, "failure": root.failure, "output": root.failureOutput,
+        "stale": root.doneStale })
     }
     function setUp(): string { root.setUp(); return root.phase }
     function check(): string { root.continueToWidget = false; root.probe(); return root.phase }
@@ -464,8 +449,8 @@ Panel {
 
         Text {
           Layout.fillWidth: true
-          text: "Runs " + (root.binary !== "" && root.phase === "ready" ? "" : "omarchy-mise-install, then ")
-            + "omaddons omarchy install, which records the change in omaddons' history. Enter presses the first button, Esc closes."
+          text: "Installs only omaddons " + root.pinnedVersion + " (SHA-256 " + root.pinnedSha256.slice(0, 12)
+            + "…), then runs its omarchy install, which records the change in omaddons' history. Enter presses the first button, Esc closes."
           color: root.muted
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
